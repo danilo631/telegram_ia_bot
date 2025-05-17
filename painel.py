@@ -1,9 +1,5 @@
 # painel.py
-from database import (
-    contar_mensagens_por_chat,
-    obter_contexto_conversa,
-    _load_data
-)
+from database import contar_mensagens_por_chat, obter_contexto_conversa
 import gradio as gr
 import asyncio
 from typing import Dict
