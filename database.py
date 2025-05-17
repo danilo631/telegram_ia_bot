@@ -122,3 +122,19 @@ async def get_last_reply(chat_id: int) -> Optional[Dict]:
         if msg['chat_id'] == chat_id and msg['is_bot']
     ]
     return bot_messages[-1] if bot_messages else None
+
+async def contar_mensagens_por_chat() -> Dict[int, int]:
+    """Conta mensagens por chat"""
+    try:
+        messages = await _load_data(MESSAGES_FILE)
+        counts = {}
+        
+        for msg in messages:
+            chat_id = msg['chat_id']
+            counts[chat_id] = counts.get(chat_id, 0) + 1
+            
+        return counts
+        
+    except Exception as e:
+        logger.error(f"Erro ao contar mensagens: {str(e)}")
+        return {}
