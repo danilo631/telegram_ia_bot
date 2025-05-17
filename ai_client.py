@@ -2,9 +2,8 @@
 import aiohttp
 import asyncio
 from config import OPENROUTER_API_KEY, IA_MODEL
-import json
-from typing import Optional, Dict, List
 import logging
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +13,7 @@ async def gerar_resposta(contexto: str, chat_id: int) -> Optional[str]:
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
-        "HTTP-Referer": f"https://telegram-bot-{chat_id}",
+        "HTTP-Referer": f"https://telegram-group-{chat_id}",
     }
     
     messages = [
@@ -22,13 +21,16 @@ async def gerar_resposta(contexto: str, chat_id: int) -> Optional[str]:
             "role": "system",
             "content": (
                 "Você é um assistente inteligente em um grupo do Telegram. "
-                "Sua função é participar de conversas de forma natural e útil, "
-                "respondendo perguntas e interagindo com os membros do grupo. "
-                "Seja conciso e direto nas respostas. "
-                "Adapte-se ao tom da conversa e só intervenha quando for relevante. "
-                "Cumprimente novos membros e responda perguntas de forma clara. "
-                "Se não souber algo, seja honesto. "
-                "Mantenha o contexto da conversa mas não repita informações."
+                "Siga estas diretrizes:\n"
+                "1. Seja natural e conversacional\n"
+                "2. Responda de forma concisa (1-2 frases)\n"
+                "3. Só responda quando for relevante\n"
+                "4. Cumprimente novos membros\n"
+                "5. Se não souber algo, diga\n"
+                "6. Mantenha o contexto mas não repita informações\n"
+                "7. Adapte-se ao tom da conversa\n"
+                "8. Use emojis quando apropriado\n\n"
+                "Contexto atual:\n{contexto}"
             )
         },
         {"role": "user", "content": contexto}
@@ -38,7 +40,7 @@ async def gerar_resposta(contexto: str, chat_id: int) -> Optional[str]:
         "model": IA_MODEL,
         "messages": messages,
         "temperature": 0.7,
-        "max_tokens": 500,
+        "max_tokens": 150,
     }
     
     try:
@@ -47,21 +49,23 @@ async def gerar_resposta(contexto: str, chat_id: int) -> Optional[str]:
                 response.raise_for_status()
                 data = await response.json()
                 
-                if "choices" not in data or len(data["choices"]) == 0:
-                    logger.error("Resposta da API sem choices: %s", json.dumps(data, indent=2))
+                if not data.get("choices"):
+                    logger.error(f"Resposta inesperada da API: {data}")
                     return None
                 
                 resposta = data["choices"][0]["message"]["content"].strip()
                 
-                # Limpeza da resposta
-                resposta = resposta.replace('"', '')
-                resposta = resposta.split('\n')[0] if '\n' in resposta else resposta
+                # Limpeza básica da resposta
+                resposta = resposta.replace('"', '').replace("'", "")
                 
-                return resposta if len(resposta) > 0 else None
+                # Remove múltiplas quebras de linha
+                resposta = ' '.join(resposta.splitlines())
+                
+                return resposta if len(resposta) > 1 else None
                 
     except asyncio.TimeoutError:
-        logger.error("Timeout ao acessar a API do OpenRouter")
-        return "⏳ Estou processando sua mensagem, por favor aguarde..."
+        logger.warning("Timeout ao acessar a API do OpenRouter")
+        return None
     except Exception as e:
-        logger.error("Erro ao gerar resposta: %s", str(e), exc_info=True)
+        logger.error(f"Erro ao gerar resposta: {str(e)}", exc_info=True)
         return None
