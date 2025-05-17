@@ -3,7 +3,12 @@ import json
 from pathlib import Path
 from typing import List, Dict, Optional, Union
 from datetime import datetime
-from config import MESSAGES_FILE, USERS_FILE, MAX_CONTEXT_LENGTH, MAX_HISTORY_MESSAGES, MAX_MESSAGES_STORED
+from config import (
+    MESSAGES_FILE,
+    USERS_FILE,
+    CONFIG_FILE,
+    MAX_MESSAGES_STORED
+)
 import logging
 import aiofiles
 import asyncio
@@ -11,14 +16,20 @@ import asyncio
 logger = logging.getLogger(__name__)
 
 async def initialize_database():
-    """Inicializa os arquivos JSON se não existirem"""
-    for file in [MESSAGES_FILE, USERS_FILE]:
+    """Inicializa todos os arquivos JSON necessários"""
+    files = {
+        MESSAGES_FILE: [],
+        USERS_FILE: [],
+        CONFIG_FILE: {"response_strategy": "smart"}
+    }
+    
+    for file, default in files.items():
         if not file.exists():
             async with aiofiles.open(file, 'w') as f:
-                await f.write('[]')
-            logger.info(f"Criado arquivo {file.name}")
+                await f.write(json.dumps(default, indent=2))
+            logger.info(f"Arquivo {file.name} criado")
 
-async def _load_data(file_path: Path) -> List[Dict]:
+async def _load_data(file_path: Path) -> Union[List, Dict]:
     """Carrega dados de um arquivo JSON"""
     try:
         async with aiofiles.open(file_path, 'r', encoding='utf-8') as f:
@@ -26,9 +37,9 @@ async def _load_data(file_path: Path) -> List[Dict]:
             return json.loads(content) if content else []
     except Exception as e:
         logger.error(f"Erro ao carregar {file_path.name}: {str(e)}")
-        return []
+        return [] if file_path != CONFIG_FILE else {}
 
-async def _save_data(file_path: Path, data: List[Dict]):
+async def _save_data(file_path: Path, data: Union[List, Dict]):
     """Salva dados em um arquivo JSON"""
     try:
         async with aiofiles.open(file_path, 'w', encoding='utf-8') as f:
@@ -47,11 +58,11 @@ async def salvar_mensagem(chat_id: int, user_id: int, user_name: str, texto: str
             "user_id": user_id,
             "user_name": user_name,
             "text": texto,
-            "is_bot": is_bot
+            "is_bot": is_bot,
+            "accurate": True
         }
         
         messages.append(new_message)
-        # Mantém apenas as mensagens mais recentes
         await _save_data(MESSAGES_FILE, messages[-MAX_MESSAGES_STORED:])
         
     except Exception as e:
@@ -62,24 +73,21 @@ async def salvar_usuario(user_id: int, user_name: str) -> bool:
     try:
         users = await _load_data(USERS_FILE)
         
-        # Atualiza se já existe, adiciona se não existe
-        user_exists = False
         for user in users:
             if user['user_id'] == user_id:
                 user['user_name'] = user_name
                 user['last_seen'] = datetime.now().isoformat()
                 user['message_count'] = user.get('message_count', 0) + 1
-                user_exists = True
-                break
+                await _save_data(USERS_FILE, users)
+                return True
         
-        if not user_exists:
-            users.append({
-                "user_id": user_id,
-                "user_name": user_name,
-                "first_seen": datetime.now().isoformat(),
-                "last_seen": datetime.now().isoformat(),
-                "message_count": 1
-            })
+        users.append({
+            "user_id": user_id,
+            "user_name": user_name,
+            "first_seen": datetime.now().isoformat(),
+            "last_seen": datetime.now().isoformat(),
+            "message_count": 1
+        })
         
         await _save_data(USERS_FILE, users)
         return True
@@ -89,51 +97,28 @@ async def salvar_usuario(user_id: int, user_name: str) -> bool:
         return False
 
 async def usuario_existe(user_id: int) -> bool:
-    """Verifica se um usuário existe no banco de dados"""
-    try:
-        users = await _load_data(USERS_FILE)
-        return any(user['user_id'] == user_id for user in users)
-    except Exception as e:
-        logger.error(f"Erro ao verificar usuário: {str(e)}")
-        return False
+    """Verifica se um usuário existe"""
+    users = await _load_data(USERS_FILE)
+    return any(user['user_id'] == user_id for user in users)
 
-async def obter_contexto_conversa(chat_id: int, limite: int = MAX_HISTORY_MESSAGES) -> str:
-    """Obtém o contexto da conversa para um chat específico"""
-    try:
-        messages = await _load_data(MESSAGES_FILE)
-        chat_messages = [
-            msg for msg in messages 
-            if msg['chat_id'] == chat_id and not msg['is_bot']
-        ][-limite:]
-        
-        contexto = []
-        current_length = 0
-        
-        for msg in reversed(chat_messages):
-            msg_text = f"{msg['user_name']}: {msg['text']}"
-            if current_length + len(msg_text) > MAX_CONTEXT_LENGTH:
-                break
-            contexto.insert(0, msg_text)
-            current_length += len(msg_text)
-        
-        return "\n".join(contexto) if contexto else "Nenhum contexto disponível."
+async def obter_contexto_conversa(chat_id: int, limite: int = 10) -> str:
+    """Obtém o contexto da conversa"""
+    messages = await _load_data(MESSAGES_FILE)
+    chat_messages = [
+        msg for msg in messages 
+        if msg['chat_id'] == chat_id
+    ][-limite:]
     
-    except Exception as e:
-        logger.error(f"Erro ao obter contexto: {str(e)}")
-        return "Erro ao carregar contexto."
+    return "\n".join(
+        f"{msg['user_name']}: {msg['text']}" 
+        for msg in chat_messages
+    )
 
-async def contar_mensagens_por_chat() -> Dict[int, int]:
-    """Conta mensagens por chat"""
-    try:
-        messages = await _load_data(MESSAGES_FILE)
-        counts = {}
-        
-        for msg in messages:
-            chat_id = msg['chat_id']
-            counts[chat_id] = counts.get(chat_id, 0) + 1
-            
-        return counts
-        
-    except Exception as e:
-        logger.error(f"Erro ao contar mensagens: {str(e)}")
-        return {}
+async def get_last_reply(chat_id: int) -> Optional[Dict]:
+    """Obtém a última resposta do bot no chat"""
+    messages = await _load_data(MESSAGES_FILE)
+    bot_messages = [
+        msg for msg in messages 
+        if msg['chat_id'] == chat_id and msg['is_bot']
+    ]
+    return bot_messages[-1] if bot_messages else None
