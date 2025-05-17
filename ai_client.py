@@ -1,24 +1,67 @@
 # ai_client.py
-import requests
+import aiohttp
+import asyncio
 from config import OPENROUTER_API_KEY, IA_MODEL
+import json
+from typing import Optional, Dict, List
+import logging
 
-def gerar_resposta(contexto: str) -> str:
+logger = logging.getLogger(__name__)
+
+async def gerar_resposta(contexto: str, chat_id: int) -> Optional[str]:
     url = "https://openrouter.ai/api/v1/chat/completions"
+    
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "HTTP-Referer": f"https://telegram-bot-{chat_id}",
     }
+    
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "Você é um assistente inteligente em um grupo do Telegram. "
+                "Sua função é participar de conversas de forma natural e útil, "
+                "respondendo perguntas e interagindo com os membros do grupo. "
+                "Seja conciso e direto nas respostas. "
+                "Adapte-se ao tom da conversa e só intervenha quando for relevante. "
+                "Cumprimente novos membros e responda perguntas de forma clara. "
+                "Se não souber algo, seja honesto. "
+                "Mantenha o contexto da conversa mas não repita informações."
+            )
+        },
+        {"role": "user", "content": contexto}
+    ]
+    
     payload = {
         "model": IA_MODEL,
-        "messages": [
-            {"role": "system", "content": "Você é um assistente que responde com base nas mensagens do grupo. E com base o assunto vai mudando vc responde com base, e se novos usuários entrar você manda mensagemde oi cumprimentandoo usuário,  e responde as dúvidas dele, e caso os usuários estiver conversando sobre um assunto que não precisa de intervençãoda ia não responda, e responde todas as duvidas do usuários e melhore a cada momento, e não fique preso a um determinado assunto, conforme o assunto vai mudando vc muda também"},
-            {"role": "user", "content": contexto}
-        ]
+        "messages": messages,
+        "temperature": 0.7,
+        "max_tokens": 500,
     }
-
+    
     try:
-        r = requests.post(url, headers=headers, json=payload, timeout=30)
-        r.raise_for_status()
-        return r.json()["choices"][0]["message"]["content"].strip()
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, headers=headers, json=payload, timeout=30) as response:
+                response.raise_for_status()
+                data = await response.json()
+                
+                if "choices" not in data or len(data["choices"]) == 0:
+                    logger.error("Resposta da API sem choices: %s", json.dumps(data, indent=2))
+                    return None
+                
+                resposta = data["choices"][0]["message"]["content"].strip()
+                
+                # Limpeza da resposta
+                resposta = resposta.replace('"', '')
+                resposta = resposta.split('\n')[0] if '\n' in resposta else resposta
+                
+                return resposta if len(resposta) > 0 else None
+                
+    except asyncio.TimeoutError:
+        logger.error("Timeout ao acessar a API do OpenRouter")
+        return "⏳ Estou processando sua mensagem, por favor aguarde..."
     except Exception as e:
-        return f"[ERRO IA]: {e}"
+        logger.error("Erro ao gerar resposta: %s", str(e), exc_info=True)
+        return None
