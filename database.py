@@ -1,33 +1,45 @@
 # database.py
 import json
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Union
 from datetime import datetime
-from config import MESSAGES_FILE, USERS_FILE, MAX_CONTEXT_LENGTH, MAX_HISTORY_MESSAGES
+from config import MESSAGES_FILE, USERS_FILE, MAX_CONTEXT_LENGTH, MAX_HISTORY_MESSAGES, MAX_MESSAGES_STORED
 import logging
+import aiofiles
+import asyncio
 
 logger = logging.getLogger(__name__)
 
-def _load_data(file_path: Path) -> List[Dict]:
+async def initialize_database():
+    """Inicializa os arquivos JSON se não existirem"""
+    for file in [MESSAGES_FILE, USERS_FILE]:
+        if not file.exists():
+            async with aiofiles.open(file, 'w') as f:
+                await f.write('[]')
+            logger.info(f"Criado arquivo {file.name}")
+
+async def _load_data(file_path: Path) -> List[Dict]:
+    """Carrega dados de um arquivo JSON"""
     try:
-        if file_path.exists():
-            with open(file_path, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        return []
+        async with aiofiles.open(file_path, 'r', encoding='utf-8') as f:
+            content = await f.read()
+            return json.loads(content) if content else []
     except Exception as e:
-        logger.error(f"Erro ao carregar dados de {file_path}: {e}")
+        logger.error(f"Erro ao carregar {file_path.name}: {str(e)}")
         return []
 
-def _save_data(file_path: Path, data: List[Dict]):
+async def _save_data(file_path: Path, data: List[Dict]):
+    """Salva dados em um arquivo JSON"""
     try:
-        with open(file_path, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        async with aiofiles.open(file_path, 'w', encoding='utf-8') as f:
+            await f.write(json.dumps(data, ensure_ascii=False, indent=2))
     except Exception as e:
-        logger.error(f"Erro ao salvar dados em {file_path}: {e}")
+        logger.error(f"Erro ao salvar em {file_path.name}: {str(e)}")
 
-def salvar_mensagem(chat_id: int, user_id: int, user_name: str, texto: str, is_bot: bool = False):
+async def salvar_mensagem(chat_id: int, user_id: int, user_name: str, texto: str, is_bot: bool = False):
+    """Salva uma mensagem no histórico"""
     try:
-        messages = _load_data(MESSAGES_FILE)
+        messages = await _load_data(MESSAGES_FILE)
         
         new_message = {
             "timestamp": datetime.now().isoformat(),
@@ -39,34 +51,56 @@ def salvar_mensagem(chat_id: int, user_id: int, user_name: str, texto: str, is_b
         }
         
         messages.append(new_message)
-        _save_data(MESSAGES_FILE, messages[-1000:])  # Mantém apenas as 1000 mensagens mais recentes
+        # Mantém apenas as mensagens mais recentes
+        await _save_data(MESSAGES_FILE, messages[-MAX_MESSAGES_STORED:])
         
     except Exception as e:
-        logger.error(f"Erro ao salvar mensagem: {e}")
+        logger.error(f"Erro ao salvar mensagem: {str(e)}")
 
-def salvar_usuario(user_id: int, user_name: str):
+async def salvar_usuario(user_id: int, user_name: str) -> bool:
+    """Salva ou atualiza um usuário"""
     try:
-        users = _load_data(USERS_FILE)
+        users = await _load_data(USERS_FILE)
         
-        # Verifica se o usuário já existe
-        user_exists = any(u['user_id'] == user_id for u in users)
+        # Atualiza se já existe, adiciona se não existe
+        user_exists = False
+        for user in users:
+            if user['user_id'] == user_id:
+                user['user_name'] = user_name
+                user['last_seen'] = datetime.now().isoformat()
+                user['message_count'] = user.get('message_count', 0) + 1
+                user_exists = True
+                break
         
         if not user_exists:
-            new_user = {
+            users.append({
                 "user_id": user_id,
                 "user_name": user_name,
                 "first_seen": datetime.now().isoformat(),
-                "message_count": 0
-            }
-            users.append(new_user)
-            _save_data(USERS_FILE, users)
-            
+                "last_seen": datetime.now().isoformat(),
+                "message_count": 1
+            })
+        
+        await _save_data(USERS_FILE, users)
+        return True
+        
     except Exception as e:
-        logger.error(f"Erro ao salvar usuário: {e}")
+        logger.error(f"Erro ao salvar usuário: {str(e)}")
+        return False
 
-def obter_contexto_conversa(chat_id: int, limite: int = MAX_HISTORY_MESSAGES) -> str:
+async def usuario_existe(user_id: int) -> bool:
+    """Verifica se um usuário existe no banco de dados"""
     try:
-        messages = _load_data(MESSAGES_FILE)
+        users = await _load_data(USERS_FILE)
+        return any(user['user_id'] == user_id for user in users)
+    except Exception as e:
+        logger.error(f"Erro ao verificar usuário: {str(e)}")
+        return False
+
+async def obter_contexto_conversa(chat_id: int, limite: int = MAX_HISTORY_MESSAGES) -> str:
+    """Obtém o contexto da conversa para um chat específico"""
+    try:
+        messages = await _load_data(MESSAGES_FILE)
         chat_messages = [
             msg for msg in messages 
             if msg['chat_id'] == chat_id and not msg['is_bot']
@@ -82,15 +116,16 @@ def obter_contexto_conversa(chat_id: int, limite: int = MAX_HISTORY_MESSAGES) ->
             contexto.insert(0, msg_text)
             current_length += len(msg_text)
         
-        return "\n".join(contexto)
+        return "\n".join(contexto) if contexto else "Nenhum contexto disponível."
     
     except Exception as e:
-        logger.error(f"Erro ao obter contexto: {e}")
-        return ""
+        logger.error(f"Erro ao obter contexto: {str(e)}")
+        return "Erro ao carregar contexto."
 
-def contar_mensagens_por_chat() -> Dict[int, int]:
+async def contar_mensagens_por_chat() -> Dict[int, int]:
+    """Conta mensagens por chat"""
     try:
-        messages = _load_data(MESSAGES_FILE)
+        messages = await _load_data(MESSAGES_FILE)
         counts = {}
         
         for msg in messages:
@@ -100,5 +135,5 @@ def contar_mensagens_por_chat() -> Dict[int, int]:
         return counts
         
     except Exception as e:
-        logger.error(f"Erro ao contar mensagens: {e}")
+        logger.error(f"Erro ao contar mensagens: {str(e)}")
         return {}
