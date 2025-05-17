@@ -11,7 +11,7 @@ def handle_message(update: Update, context: CallbackContext):
 
     salvar_mensagem(chat_id, user, texto)
 
-    contexto_mensagens = obter_ultimas_mensagens(chat_id, limite=1000)
+    contexto_mensagens = obter_ultimas_mensagens(chat_id, limite=500)
     prompt = "\n".join(contexto_mensagens)
     resposta = gerar_resposta(prompt)
 
