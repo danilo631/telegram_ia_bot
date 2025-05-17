@@ -13,6 +13,7 @@ from handlers import (
     handle_info,
     handle_config,
     handle_message,
+    handle_new_members,
     setup_commands
 )
 from config import TELEGRAM_TOKEN, BOT_NAME, DATA_DIR
@@ -57,8 +58,9 @@ def main():
         app.add_handler(CommandHandler("info", handle_info))
         app.add_handler(CommandHandler("config", handle_config))
         
-        # Handler de mensagens
+        # Handlers de mensagens
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+        app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, handle_new_members))
         
         logger.info(f"Iniciando {BOT_NAME}...")
         app.run_polling(allowed_updates=Update.ALL_TYPES)
