@@ -1,6 +1,6 @@
 # config.py
-import os
 from pathlib import Path
+import os
 
 # Tokens e configurações da API
 TELEGRAM_TOKEN = '7586808863:AAEM92xbhc8TP8VSGz8QdTBaJOu3jwhuiNA'
@@ -17,5 +17,9 @@ MESSAGES_FILE = DATA_DIR / 'messages.json'
 USERS_FILE = DATA_DIR / 'users.json'
 
 # Configurações de contexto
-MAX_CONTEXT_LENGTH = 1500  # Número máximo de caracteres para o contexto
-MAX_HISTORY_MESSAGES = 20  # Número máximo de mensagens no histórico
+MAX_CONTEXT_LENGTH = 2000  # Número máximo de caracteres para o contexto
+MAX_HISTORY_MESSAGES = 15  # Número máximo de mensagens no histórico
+MAX_MESSAGES_STORED = 1000  # Número máximo de mensagens armazenadas
+
+# Configuração de logging
+LOG_FILE = DATA_DIR / 'bot.log'
