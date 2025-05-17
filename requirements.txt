@@ -1,3 +1,6 @@
-python-telegram-bot==13.15
-requests
+# requirements.txt
+python-telegram-bot==20.3
+aiohttp==3.9.0
 gradio==4.26.0
+python-dotenv==1.0.0
+python-dateutil==2.8.2
