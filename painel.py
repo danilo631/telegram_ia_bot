@@ -1,13 +1,30 @@
 # painel.py
+from database import contar_mensagens_por_chat, obter_contexto_conversa
 import gradio as gr
-from database import contar_mensagens_por_chat
+from typing import Dict
 
-def painel():
+def gerar_relatorio():
     dados = contar_mensagens_por_chat()
     if not dados:
         return "Nenhuma mensagem registrada ainda."
-    return "\n".join([f"Grupo {chat_id}: {qtd} mensagens" for chat_id, qtd in dados])
+    
+    relatorio = ["📊 Relatório de Atividade do Bot"]
+    for chat_id, qtd in dados.items():
+        contexto = obter_contexto_conversa(chat_id, limite=5)
+        relatorio.append(
+            f"\n\n💬 Grupo {chat_id}:\n"
+            f"📝 Total de mensagens: {qtd}\n"
+            f"Últimas mensagens:\n{contexto}"
+        )
+    
+    return "\n".join(relatorio)
 
 def iniciar_painel():
-    iface = gr.Interface(fn=painel, inputs=[], outputs="text", title="📊 Painel do Bot Telegram IA")
-    iface.launch(server_port=7860)
+    iface = gr.Interface(
+        fn=gerar_relatorio,
+        inputs=[],
+        outputs="text",
+        title="🤖 Painel de Controle do Bot",
+        description="Relatório de atividade e interações do bot"
+    )
+    iface.launch(server_port=7860, share=False)
