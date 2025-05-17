@@ -5,46 +5,56 @@ from config import (
     OPENROUTER_API_KEY,
     IA_MODEL,
     BOT_NAME,
-    BOT_USERNAME,
-    DEFAULT_PROMPT,
-    CORRECTION_PROMPT
+    SYSTEM_PROMPT,
+    DEFAULT_CONFIG,
+    AVAILABLE_MODELS
 )
 import logging
-from typing import Optional, Tuple
-import re
+from typing import Optional, Dict
+import json
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
 class AIClient:
     def __init__(self):
         self.session = aiohttp.ClientSession()
+        self.base_url = "https://openrouter.ai/api/v1"
         self.headers = {
             "Authorization": f"Bearer {OPENROUTER_API_KEY}",
             "Content-Type": "application/json",
-            "HTTP-Referer": f"https://{BOT_USERNAME}-bot"
+            "HTTP-Referer": "https://github.com/telegram-bot",
         }
+        self.model = IA_MODEL
+        self.last_request = None
 
-    async def gerar_resposta(self, contexto: str, chat_id: int, is_mention: bool = False) -> Optional[str]:
-        """Gera uma resposta usando IA com base no contexto"""
+    async def generate_response(self, prompt: str, chat_id: int, is_mention: bool = False) -> Optional[str]:
+        """Gera uma resposta usando a API da OpenRouter"""
         try:
-            system_prompt = DEFAULT_PROMPT
-            if is_mention:
-                system_prompt += "\n\nO usuário te mencionou diretamente. Responda de forma completa e precisa."
+            current_time = datetime.now()
+            if self.last_request and (current_time - self.last_request).seconds < 1:
+                await asyncio.sleep(1)  # Rate limiting
+            
+            self.last_request = current_time
 
             messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": contexto}
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": prompt}
             ]
 
             payload = {
-                "model": IA_MODEL,
+                "model": self.model,
                 "messages": messages,
-                "temperature": 0.7,
-                "max_tokens": 300
+                "temperature": DEFAULT_CONFIG["temperature"],
+                "max_tokens": DEFAULT_CONFIG["max_tokens"],
+                "metadata": {
+                    "chat_id": chat_id,
+                    "is_mention": is_mention
+                }
             }
 
             async with self.session.post(
-                "https://openrouter.ai/api/v1/chat/completions",
+                f"{self.base_url}/chat/completions",
                 headers=self.headers,
                 json=payload,
                 timeout=30
@@ -52,65 +62,45 @@ class AIClient:
                 response.raise_for_status()
                 data = await response.json()
                 
-                if not data.get("choices"):
-                    logger.error(f"Resposta inesperada da API: {data}")
+                if not data.get('choices'):
+                    logger.error(f"Resposta inesperada: {json.dumps(data, indent=2)}")
                     return None
                 
-                resposta = data["choices"][0]["message"]["content"].strip()
-                return self.clean_response(resposta)
+                return data['choices'][0]['message']['content'].strip()
 
         except asyncio.TimeoutError:
-            logger.warning("Timeout ao acessar a API do OpenRouter")
-            return None
+            logger.warning("Timeout na requisição à OpenRouter API")
+            return "⏳ Estou processando sua solicitação, por favor aguarde..."
+        except aiohttp.ClientError as e:
+            logger.error(f"Erro na conexão: {str(e)}")
+            return "🔌 Estou tendo problemas para me conectar ao servidor."
         except Exception as e:
             logger.error(f"Erro ao gerar resposta: {str(e)}", exc_info=True)
             return None
 
-    async def should_respond(self, message_text: str, last_reply: dict = None) -> bool:
-        """Determina se o bot deve responder a uma mensagem"""
-        texto = message_text.lower()
-        
-        # Responde sempre a menções
-        if BOT_USERNAME.lower() in texto:
-            return True
-        
-        # Verifica se é uma pergunta
-        if '?' in texto and len(texto.split()) > 3:
-            return True
-        
-        # Verifica se a última resposta foi incorreta
-        if last_reply and not last_reply.get('accurate', True):
-            return True
-        
-        # Outras estratégias de resposta
-        return False
+    async def list_models(self) -> Dict:
+        """Lista modelos disponíveis na OpenRouter"""
+        try:
+            async with self.session.get(
+                f"{self.base_url}/models",
+                headers=self.headers,
+                timeout=15
+            ) as response:
+                response.raise_for_status()
+                return await response.json()
+        except Exception as e:
+            logger.error(f"Erro ao listar modelos: {str(e)}")
+            return AVAILABLE_MODELS
 
-    def clean_response(self, text: str) -> str:
-        """Limpa a resposta da IA"""
-        if not text:
-            return ""
-        
-        # Remove citações indesejadas
-        text = re.sub(r'^["\']|["\']$', '', text)
-        
-        # Remove múltiplos espaços e quebras de linha
-        text = ' '.join(text.split())
-        
-        # Garante que termina com pontuação
-        if text and text[-1] not in {'.', '!', '?'}:
-            text += '.'
-        
-        return text[:500]  # Limite de caracteres
+    async def change_model(self, model_key: str) -> bool:
+        """Altera o modelo de IA sendo usado"""
+        if model_key in AVAILABLE_MODELS:
+            self.model = AVAILABLE_MODELS[model_key]
+            return True
+        return False
 
     async def close(self):
         await self.session.close()
 
 # Instância global
 ai_client = AIClient()
-
-# Funções de interface
-async def gerar_resposta(*args, **kwargs):
-    return await ai_client.gerar_resposta(*args, **kwargs)
-
-async def should_respond(*args, **kwargs):
-    return await ai_client.should_respond(*args, **kwargs)
