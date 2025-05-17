@@ -110,13 +110,22 @@ class Database:
         except Exception as e:
             logger.error(f"Erro ao salvar usuário: {str(e)}")
 
+    async def user_exists(self, user_id: int) -> bool:
+        """Verifica se um usuário existe"""
+        try:
+            users = await self._load_data(USERS_FILE)
+            return any(user['user_id'] == user_id for user in users)
+        except Exception as e:
+            logger.error(f"Erro ao verificar usuário: {str(e)}")
+            return False
+
     async def save_group(self, chat_id: int, title: str, creator_id: int, admins: list = None):
         """Salva ou atualiza informações de um grupo"""
         try:
             groups = await self._load_data(GROUPS_FILE)
             
-            if chat_id not in groups:
-                groups[chat_id] = {
+            if str(chat_id) not in groups:
+                groups[str(chat_id)] = {
                     "title": title,
                     "creator_id": creator_id,
                     "admins": admins or [],
@@ -124,10 +133,10 @@ class Database:
                     "last_activity": datetime.now().isoformat()
                 }
             else:
-                groups[chat_id]['title'] = title
-                groups[chat_id]['last_activity'] = datetime.now().isoformat()
+                groups[str(chat_id)]['title'] = title
+                groups[str(chat_id)]['last_activity'] = datetime.now().isoformat()
                 if admins:
-                    groups[chat_id]['admins'] = admins
+                    groups[str(chat_id)]['admins'] = admins
             
             await self._save_data(GROUPS_FILE, groups)
             
@@ -188,6 +197,9 @@ async def save_message(*args, **kwargs):
 
 async def save_user(*args, **kwargs):
     return await db.save_user(*args, **kwargs)
+
+async def user_exists(*args, **kwargs):
+    return await db.user_exists(*args, **kwargs)
 
 async def save_group(*args, **kwargs):
     return await db.save_group(*args, **kwargs)
