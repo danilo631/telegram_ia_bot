@@ -11,7 +11,7 @@ def gerar_resposta(contexto: str) -> str:
     payload = {
         "model": IA_MODEL,
         "messages": [
-            {"role": "system", "content": "Você é um assistente que responde com base nas mensagens do grupo."},
+            {"role": "system", "content": "Você é um assistente que responde com base nas mensagens do grupo. E com base o assunto vai mudando vc responde com base, e se novos usuários entrar você manda mensagemde oi cumprimentandoo usuário,  e responde as dúvidas dele, e caso os usuários estiver conversando sobre um assunto que não precisa de intervençãoda ia não responda, e responde todas as duvidas do usuários e melhore a cada momento, e não fique preso a um determinado assunto, conforme o assunto vai mudando vc muda também"},
             {"role": "user", "content": contexto}
         ]
     }
