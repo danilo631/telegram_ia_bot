@@ -11,7 +11,7 @@ def handle_message(update: Update, context: CallbackContext):
 
     salvar_mensagem(chat_id, user, texto)
 
-    contexto_mensagens = obter_ultimas_mensagens(chat_id, limite=100)
+    contexto_mensagens = obter_ultimas_mensagens(chat_id, limite=1000)
     prompt = "\n".join(contexto_mensagens)
     resposta = gerar_resposta(prompt)
 
@@ -22,7 +22,7 @@ def handle_comandos(update: Update, context: CallbackContext):
     comando = update.message.text.lower()
 
     if comando == "/resumo":
-        ultimas = obter_ultimas_mensagens(chat_id, limite=10)
+        ultimas = obter_ultimas_mensagens(chat_id, limite=50)
         update.message.reply_text("📝 Últimas mensagens:\n\n" + "\n".join(ultimas))
     elif comando == "/info":
         update.message.reply_text("🤖 Eu sou um bot com IA que responde com base nas mensagens anteriores do grupo.")
