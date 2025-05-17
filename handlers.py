@@ -4,13 +4,13 @@ from telegram.ext import ContextTypes, filters
 from ai_client import ai_client
 from database import (
     save_message,
-    get_conversation_context,
     save_user,
     user_exists,
+    save_group,
+    get_conversation_context,
     get_last_reply,
     get_config,
     update_config,
-    save_group,
     get_group_info
 )
 import logging
@@ -19,8 +19,7 @@ from config import (
     BOT_USERNAME,
     MAX_HISTORY_MESSAGES,
     RESPONSE_STRATEGIES,
-    DEFAULT_CONFIG,
-    SYSTEM_PROMPT
+    DEFAULT_CONFIG
 )
 import re
 from typing import Optional
@@ -46,7 +45,6 @@ async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user
         chat = update.effective_chat
         
-        # Registrar usuário e grupo
         await save_user(user.id, user.full_name)
         if chat.type != "private":
             await save_group(chat.id, chat.title, user.id)
@@ -105,7 +103,6 @@ async def handle_config(update: Update, context: ContextTypes.DEFAULT_TYPE):
         config = await get_config()
         
         if not args:
-            # Mostrar configuração atual
             current_settings = "\n".join([f"- {k}: {v}" for k, v in config.items()])
             strategies = "\n".join([f"- {k}: {v}" for k, v in RESPONSE_STRATEGIES.items()])
             
@@ -126,12 +123,10 @@ async def handle_config(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         key, value = args[0], args[1]
         
-        # Validação básica
         if key not in DEFAULT_CONFIG:
             await update.message.reply_text(f"Chave inválida. Opções: {', '.join(DEFAULT_CONFIG.keys())}")
             return
         
-        # Atualizar configuração
         config[key] = value
         await update_config(config)
         
@@ -164,25 +159,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user
         text = message.text.strip()
         
-        # Ignorar mensagens muito curtas ou comandos
         if len(text) < 3 or text.startswith('/'):
             return
         
-        # Registrar mensagem
         await save_user(user.id, user.full_name)
         if chat.type != "private":
             await save_group(chat.id, chat.title, user.id)
         
         await save_message(chat.id, user.id, user.full_name, text, is_bot=False)
         
-        # Verificar se deve responder
         should_reply = await should_respond(message, context)
         
         if should_reply:
-            # Obter contexto da conversa
             context_messages = await get_conversation_context(chat.id, MAX_HISTORY_MESSAGES)
-            
-            # Gerar resposta
             response = await ai_client.generate_response(context_messages, chat.id)
             
             if response:
@@ -199,11 +188,9 @@ async def should_respond(message, context) -> bool:
         text = message.text.lower()
         chat = message.chat
         
-        # Responde sempre a menções
         if BOT_USERNAME.lower() in text:
             return True
         
-        # Verificar configuração de resposta
         config = await get_config()
         strategy = config.get('response_strategy', 'smart')
         
@@ -212,14 +199,12 @@ async def should_respond(message, context) -> bool:
         elif strategy == "active":
             return True
         
-        # Estratégia 'smart' - responde quando relevante
-        if '?' in text:  # Perguntas
+        if '?' in text:
             return True
             
         if any(keyword in text for keyword in ['sabe', 'como funciona', 'explique', 'ajuda']):
             return True
             
-        # Verificar se a última resposta foi incorreta
         last_reply = await get_last_reply(chat.id)
         if last_reply and not last_reply.get('accurate', True):
             return True
@@ -229,3 +214,23 @@ async def should_respond(message, context) -> bool:
     except Exception as e:
         logger.error(f"Erro em should_respond: {str(e)}")
         return False
+
+async def handle_new_members(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Manipula novos membros no grupo"""
+    try:
+        for member in update.message.new_chat_members:
+            if member.id == context.bot.id:
+                await update.message.reply_text(
+                    f"👋 Olá a todos! Eu sou {BOT_NAME}, seu assistente de IA. "
+                    "Estou aqui para ajudar com perguntas e conversas!"
+                )
+            else:
+                if not await user_exists(member.id):
+                    await update.message.reply_text(
+                        f"🌟 Bem-vindo(a), {member.full_name}!\n"
+                        f"Se precisar de algo, é só me marcar com @{BOT_USERNAME}!"
+                    )
+                await save_user(member.id, member.full_name)
+                
+    except Exception as e:
+        logger.error(f"Erro em handle_new_members: {str(e)}", exc_info=True)
