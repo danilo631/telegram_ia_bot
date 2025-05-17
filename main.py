@@ -1,23 +1,24 @@
 # main.py
 import logging
-from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, ContextTypes
-from telegram.ext import filters
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    MessageHandler,
+    ContextTypes,
+    filters
+)
 from telegram import Update
-from threading import Thread
-import asyncio
-
 from handlers import (
-    handle_message,
-    handle_commands,
+    handle_start,
+    handle_info,
     handle_config,
-    handle_new_members,
-    handle_mention,
+    handle_message,
     setup_commands
 )
 from config import TELEGRAM_TOKEN, BOT_NAME, DATA_DIR
-from painel import iniciar_painel
-from database import initialize_database
+from database import db
 from ai_client import ai_client
+import asyncio
 
 # Configuração de logging
 logging.basicConfig(
@@ -31,46 +32,39 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 async def post_init(application):
-    """Configurações pós-inicialização"""
-    await initialize_database()
+    """Executado após a inicialização"""
+    await db.initialize()
     await setup_commands(application.bot)
-    logger.info("Comandos do bot configurados")
+    logger.info(f"{BOT_NAME} inicializado com sucesso")
 
 async def shutdown(application):
-    """Encerramento limpo"""
+    """Executado no encerramento"""
     await ai_client.close()
     logger.info("Conexões encerradas corretamente")
 
 def main():
-    # Criação da aplicação
-    app = ApplicationBuilder() \
-        .token(TELEGRAM_TOKEN) \
-        .post_init(post_init) \
-        .post_shutdown(shutdown) \
-        .build()
+    """Função principal"""
+    try:
+        # Criar aplicação
+        app = ApplicationBuilder() \
+            .token(TELEGRAM_TOKEN) \
+            .post_init(post_init) \
+            .post_shutdown(shutdown) \
+            .build()
 
-    # Handlers
-    app.add_handler(CommandHandler(["start", "info", "resumo"], handle_commands))
-    app.add_handler(CommandHandler("config", handle_config))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, handle_new_members))
-    app.add_handler(MessageHandler(filters.TEXT & filters.Entity("mention"), handle_mention))
+        # Handlers de comandos
+        app.add_handler(CommandHandler("start", handle_start))
+        app.add_handler(CommandHandler("info", handle_info))
+        app.add_handler(CommandHandler("config", handle_config))
+        
+        # Handler de mensagens
+        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+        
+        logger.info(f"Iniciando {BOT_NAME}...")
+        app.run_polling(allowed_updates=Update.ALL_TYPES)
 
-    # Inicia o painel em thread separada
-    Thread(target=iniciar_painel, daemon=True).start()
-
-    logger.info(f"🤖 {BOT_NAME} iniciado com sucesso!")
-    print(f"🤖 {BOT_NAME} iniciado com sucesso!")
-
-    # Inicia o bot
-    app.run_polling(
-        allowed_updates=Update.ALL_TYPES,
-        drop_pending_updates=True
-    )
+    except Exception as e:
+        logger.critical(f"Falha ao iniciar bot: {str(e)}", exc_info=True)
 
 if __name__ == "__main__":
-    try:
-        main()
-    except Exception as e:
-        logger.critical(f"Erro fatal: {str(e)}", exc_info=True)
-        print(f"Erro fatal: {str(e)}")
+    main()
