@@ -1,5 +1,6 @@
 # main.py
-from telegram.ext import Updater, MessageHandler, CommandHandler, Filters
+from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler
+from telegram.ext import filters
 from handlers import handle_message, handle_comandos, handle_new_members
 from config import TELEGRAM_TOKEN
 from threading import Thread
