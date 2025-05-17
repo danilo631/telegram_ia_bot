@@ -3,9 +3,9 @@ from pathlib import Path
 
 # Configurações básicas
 BOT_NAME = "SuperAI"
-BOT_USERNAME = "SuperAi148_bot"
+BOT_USERNAME = "SuperAi148_bot"  # Atualize com seu username real
 
-# Tokens atualizados
+# Tokens e configurações da API
 TELEGRAM_TOKEN = '7586808863:AAEM92xbhc8TP8VSGz8QdTBaJOu3jwhuiNA'
 OPENROUTER_API_KEY = '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'
 IA_MODEL = 'meta-llama/llama-4-maverick:free'
